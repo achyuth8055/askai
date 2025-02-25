@@ -55,18 +55,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw new Error(`Server Error: ${response.status}`);
             }
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let partialData = "";
+            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
+                const lines = value.trim().split("\n").filter(line => line.trim() !== "");
 
-                // Split chunk into JSON objects
-                const lines = chunk.split("\n").filter(line => line.trim() !== "");
                 for (const line of lines) {
                     try {
                         const parsedJson = JSON.parse(line);

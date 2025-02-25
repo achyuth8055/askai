@@ -1,11 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const { TextDecoder } = require("util");
-require("dotenv").config();
-
 const fetch = (...args) =>
     import("node-fetch").then(({ default: fetch }) => fetch(...args));
+require("dotenv").config();
 
 const app = express();
 
@@ -48,17 +46,14 @@ app.get("/stream", async (req, res) => {
             throw new Error("No response body from AI model.");
         }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
+        const reader = response.body.pipe(new TextDecoderStream()).getReader();
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
+            const lines = value.trim().split("\n").filter(line => line.trim() !== "");
 
-            // Ensure valid JSON streaming
-            const lines = chunk.split("\n").filter(line => line.trim() !== "");
             for (const line of lines) {
                 try {
                     const parsedJson = JSON.parse(line);
