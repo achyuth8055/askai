@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const { TextDecoder } = require("util");
+require('dotenv').config();
 
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
@@ -72,5 +73,5 @@ app.get("/stream", async (req, res) => {
         res.end();
     }
 });
-
-app.listen(3000, () => console.log("🚀 AI Server running on port 3000"));
+const port = process.env.PORT; 
+app.listen(port, () => console.log("🚀 AI Server running on port ",port));
