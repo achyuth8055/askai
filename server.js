@@ -35,7 +35,7 @@ app.get("/stream", async (req, res) => {
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        const response = await fetch("http://localhost:11434/api/generate", {
+        const response = await fetch(`http://34.123.54.44:11434/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: "llama2", prompt }),
