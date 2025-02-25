@@ -2,29 +2,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const chatBox = document.getElementById("chat-box");
     const userInput = document.getElementById("user-input");
     const sendButton = document.getElementById("send-button");
-    const sidebarToggle = document.getElementById("sidebar-toggle");
-    const sidebar = document.getElementById("sidebar");
-    const closeSidebar = document.getElementById("close-sidebar");
-    let eventSource = null;
-
-    // Sidebar Toggle Functionality
-    sidebarToggle.addEventListener("click", () => {
-        sidebar.classList.toggle("show");
-    });
-
-    closeSidebar.addEventListener("click", () => {
-        sidebar.classList.remove("show");
-    });
-
-    // Function to Copy AI Response
-    function copyToClipboard(text, button) {
-        navigator.clipboard.writeText(text).then(() => {
-            button.innerHTML = '<i class="fas fa-check"></i>';
-            setTimeout(() => {
-                button.innerHTML = '<i class="fas fa-copy"></i>';
-            }, 1500);
-        }).catch(err => console.error("Failed to copy text:", err));
-    }
 
     // Function to Display Messages
     function displayMessage(text, className) {
@@ -55,23 +32,31 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw new Error(`Server Error: ${response.status}`);
             }
 
-            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const lines = value.trim().split("\n").filter(line => line.trim() !== "");
+                const chunk = decoder.decode(value, { stream: true });
 
+                // ✅ FIX: Remove `data: ` before parsing JSON
+                const lines = chunk.split("\n").filter(line => line.trim() !== "");
                 for (const line of lines) {
-                    try {
-                        const parsedJson = JSON.parse(line);
-                        if (parsedJson.text) {
-                            fullResponse += parsedJson.text;
-                            botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
+                    if (line.startsWith("data: ")) {
+                        try {
+                            const jsonText = line.replace("data: ", "").trim(); // ✅ Remove `data: `
+                            if (jsonText === "[DONE]") continue; // Ignore [DONE] signal
+
+                            const parsedJson = JSON.parse(jsonText);
+                            if (parsedJson.text) {
+                                fullResponse += parsedJson.text;
+                                botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
+                            }
+                        } catch (jsonError) {
+                            console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
                         }
-                    } catch (jsonError) {
-                        console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
                     }
                 }
             }
@@ -86,7 +71,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Event Listeners
     sendButton.addEventListener("click", sendMessage);
-
     userInput.addEventListener("keypress", function (event) {
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();

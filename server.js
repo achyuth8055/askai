@@ -1,8 +1,11 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const fetch = require("node-fetch"); // ✅ Ensure you use CommonJS `require()`
+const { TextDecoder } = require("util");
 require("dotenv").config();
+
+const fetch = (...args) =>
+    import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 
@@ -38,23 +41,34 @@ app.get("/stream", async (req, res) => {
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`❌ Ollama API Error: ${response.status} - ${errorText}`);
-            return res.status(response.status).json({ error: errorText });
+            throw new Error(`Ollama API Error: ${response.status}`);
         }
 
-        const data = await response.text(); // ✅ Correctly handle streaming data
-        const lines = data.split("\n").filter(line => line.trim() !== "");
+        if (!response.body) {
+            throw new Error("No response body from AI model.");
+        }
 
-        for (const line of lines) {
-            try {
-                const parsedJson = JSON.parse(line);
-                if (parsedJson.response) {
-                    console.log("🔹 Streaming response:", parsedJson.response);
-                    res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+
+            // ✅ Ensure valid JSON streaming & format for SSE
+            const lines = chunk.split("\n").filter(line => line.trim() !== "");
+            for (const line of lines) {
+                try {
+                    const parsedJson = JSON.parse(line);
+                    if (parsedJson.response) {
+                        console.log("🔹 Streaming response:", parsedJson.response);
+                        res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
+                    }
+                } catch (jsonError) {
+                    console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
                 }
-            } catch (jsonError) {
-                console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
             }
         }
 
