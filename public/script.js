@@ -16,7 +16,6 @@ document.addEventListener("DOMContentLoaded", function () {
         let botMessage = displayMessage("...", "bot-message", true);
         let fullResponse = "";
 
-        // ✅ Close previous EventSource connection if it's still open
         if (eventSource) {
             eventSource.close();
         }
@@ -24,41 +23,42 @@ document.addEventListener("DOMContentLoaded", function () {
         eventSource = new EventSource(`/stream?prompt=${encodeURIComponent(message)}`);
 
         eventSource.onmessage = function (event) {
-            if (event.data === "[DONE]") {
-                eventSource.close();
-                eventSource = null;
+            try {
+                if (event.data === "[DONE]") {
+                    eventSource.close();
+                    eventSource = null;
 
-                let copyButton = document.createElement("button");
-                copyButton.innerHTML = '<i class="fas fa-copy"></i>';
-                copyButton.classList.add("copy-button");
-                copyButton.onclick = () => copyToClipboard(fullResponse, copyButton);
+                    let copyButton = document.createElement("button");
+                    copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+                    copyButton.classList.add("copy-button");
+                    copyButton.onclick = () => copyToClipboard(fullResponse, copyButton);
 
-                botMessage.appendChild(copyButton);
-            } else {
-                try {
+                    botMessage.appendChild(copyButton);
+                } else {
                     const responseData = JSON.parse(event.data);
-                    if (responseData.text) {
+                    if (responseData.error) {
+                        botMessage.innerText = `⚠️ ${responseData.error}`;
+                    } else if (responseData.text) {
                         fullResponse += responseData.text;
                         botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
                     }
-                } catch (error) {
-                    console.warn("⚠️ JSON Parse Error:", error); // Changed to `warn` to prevent console spam
                 }
+            } catch (error) {
+                console.warn("⚠️ JSON Parse Error:", error);
+                botMessage.innerText = "⚠️ Error processing response.";
             }
-
             chatBox.scrollTop = chatBox.scrollHeight;
         };
 
         eventSource.onerror = function (event) {
             console.error("❌ EventSource Error:", event);
             if (eventSource) eventSource.close();
-            botMessage.innerText = "Error fetching AI response.";
+            botMessage.innerText = "⚠️ Connection lost. Try again.";
         };
     }
 
     sendButton.addEventListener("click", sendMessage);
 
-    // ✅ Enter Key Support
     userInput.addEventListener("keypress", function (event) {
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
@@ -81,7 +81,6 @@ document.addEventListener("DOMContentLoaded", function () {
         messageDiv.innerHTML = text;
         chatBox.appendChild(messageDiv);
         chatBox.scrollTop = chatBox.scrollHeight;
-
         return messageDiv;
     }
 });
