@@ -41,6 +41,7 @@ body {
 /* 🔹 CHAT CONTAINER */
 .chat-container {
     display: flex;
+    background-color: #555;
     flex-direction: column;
     justify-content: center;
     align-items: center;
