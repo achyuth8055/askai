@@ -6,22 +6,18 @@ require("dotenv").config();
 
 const app = express();
 
-// Middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
 
-// Set EJS view engine
 app.set("view engine", "ejs");
 app.set("views", "views");
 app.use(express.static("public"));
 
-// Home route
 app.get("/", (req, res) => {
     res.render("index");
 });
 
-// AI Streaming Route
 app.get("/stream", async (req, res) => {
     const { prompt } = req.query;
     console.log(`🔹 Received request: "${prompt}"`);
@@ -33,17 +29,10 @@ app.get("/stream", async (req, res) => {
     try {
         console.log("🔹 Fetching AI response...");
 
-        // Set headers for streaming response
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        // Send keep-alive pings every 15 seconds
-        const keepAliveInterval = setInterval(() => {
-            res.write("data: [PING]\n\n");
-        }, 15000);
-
-        // Make API request to Ollama
         const response = await fetch(`${process.env.OLLAMA_HOST}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -51,7 +40,6 @@ app.get("/stream", async (req, res) => {
         });
 
         if (!response.ok) {
-            clearInterval(keepAliveInterval);
             const errorText = await response.text();
             console.error("❌ Ollama API Error:", errorText);
             throw new Error(`Ollama API Error: ${response.status}`);
@@ -61,36 +49,34 @@ app.get("/stream", async (req, res) => {
             throw new Error("No response body from AI model.");
         }
 
-        const reader = response.body.getReader();
+        // ✅ FIX: Use `.pipe()` instead of `getReader()`
+        const reader = response.body.pipe(new require("stream").PassThrough());
         const decoder = new TextDecoder();
-        let buffer = "";
 
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+        reader.on("data", (chunk) => {
+            try {
+                const dataString = decoder.decode(chunk, { stream: true }).trim();
+                const lines = dataString.split("\n").filter(line => line.trim() !== "");
 
-            buffer += decoder.decode(value, { stream: true });
-
-            // Process each line of the streamed JSON
-            const lines = buffer.split("\n").filter(line => line.trim() !== "");
-            buffer = ""; // Reset buffer after processing
-
-            lines.forEach(line => {
-                try {
+                lines.forEach(line => {
+                    if (line.startsWith("data:")) {
+                        line = line.replace("data:", "").trim();  // Remove `data:` prefix
+                    }
                     const parsedJson = JSON.parse(line);
                     if (parsedJson.response) {
                         console.log("🔹 Streaming response:", parsedJson.response);
                         res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
                     }
-                } catch (jsonError) {
-                    console.error("❌ JSON Parse Error:", jsonError);
-                }
-            });
-        }
+                });
+            } catch (jsonError) {
+                console.error("❌ JSON Parse Error:", jsonError);
+            }
+        });
 
-        clearInterval(keepAliveInterval);
-        res.write("data: [DONE]\n\n");
-        res.end();
+        reader.on("end", () => {
+            res.write("data: [DONE]\n\n");
+            res.end();
+        });
 
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
@@ -99,6 +85,5 @@ app.get("/stream", async (req, res) => {
     }
 });
 
-// Start Server
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 AI Server running on port ${port}`));
