@@ -6,17 +6,22 @@ require("dotenv").config();
 
 const app = express();
 
+// Middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
+
+// Set EJS view engine
 app.set("view engine", "ejs");
 app.set("views", "views");
 app.use(express.static("public"));
 
+// Home route
 app.get("/", (req, res) => {
     res.render("index");
 });
 
+// AI Streaming Route
 app.get("/stream", async (req, res) => {
     const { prompt } = req.query;
     console.log(`🔹 Received request: "${prompt}"`);
@@ -27,10 +32,13 @@ app.get("/stream", async (req, res) => {
 
     try {
         console.log("🔹 Fetching AI response...");
+
+        // Set headers for streaming response
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
+        // Make API request to Ollama
         const response = await fetch(`${process.env.OLLAMA_HOST}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -40,57 +48,50 @@ app.get("/stream", async (req, res) => {
         if (!response.ok) {
             const errorText = await response.text();
             console.error("❌ Ollama API Error:", errorText);
-            res.write(`data: ${JSON.stringify({ error: `API Error: ${response.status}` })}\n\n`);
-            res.end();
-            return;
-        }
-
-        const contentType = response.headers.get("content-type") || "";
-        if (!contentType.includes("application/json") && !contentType.includes("text/event-stream")) {
-            const errorText = await response.text();
-            console.error("❌ Unexpected Response Type:", contentType, errorText);
-            res.write(`data: ${JSON.stringify({ error: "Unexpected response format from AI" })}\n\n`);
-            res.end();
-            return;
+            throw new Error(`Ollama API Error: ${response.status}`);
         }
 
         if (!response.body) {
-            console.error("❌ No response body from AI model.");
-            res.write(`data: ${JSON.stringify({ error: "Empty response from AI" })}\n\n`);
-            res.end();
-            return;
+            throw new Error("No response body from AI model.");
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let accumulatedResponse = "";
+        let buffer = "";
 
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
 
-            const chunkText = decoder.decode(value, { stream: true }).trim();
-            accumulatedResponse += chunkText;
+            buffer += decoder.decode(value, { stream: true });
 
-            if (res.writableEnded) {
-                console.warn("⚠️ Client disconnected, stopping stream.");
-                return;
-            }
+            // Process each line of the streamed JSON
+            const lines = buffer.split("\n").filter(line => line.trim() !== "");
+            buffer = ""; // Reset buffer after processing
 
-            res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
-            console.log("🔹 Streaming chunk:", chunkText);
+            lines.forEach(line => {
+                try {
+                    const parsedJson = JSON.parse(line);
+                    if (parsedJson.response) {
+                        console.log("🔹 Streaming response:", parsedJson.response);
+                        res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
+                    }
+                } catch (jsonError) {
+                    console.error("❌ JSON Parse Error:", jsonError);
+                }
+            });
         }
 
         res.write("data: [DONE]\n\n");
         res.end();
+
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
-        if (!res.writableEnded) {
-            res.write(`data: ${JSON.stringify({ error: error.message || "An error occurred" })}\n\n`);
-            res.end();
-        }
+        res.write(`data: ${JSON.stringify({ error: error.message || "An error occurred" })}\n\n`);
+        res.end();
     }
 });
 
+// Start Server
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 AI Server running on port ${port}`));

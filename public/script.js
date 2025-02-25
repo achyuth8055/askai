@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", function () {
         let botMessage = displayMessage("...", "bot-message", true);
         let fullResponse = "";
 
+        // Close previous event source if open
         if (eventSource) {
             eventSource.close();
         }
@@ -28,6 +29,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     eventSource.close();
                     eventSource = null;
 
+                    // Add Copy button after response is fully received
                     let copyButton = document.createElement("button");
                     copyButton.innerHTML = '<i class="fas fa-copy"></i>';
                     copyButton.classList.add("copy-button");
@@ -36,6 +38,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     botMessage.appendChild(copyButton);
                 } else {
                     const responseData = JSON.parse(event.data);
+
                     if (responseData.error) {
                         botMessage.innerText = `⚠️ ${responseData.error}`;
                     } else if (responseData.text) {
