@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const dotenv = require("dotenv");
-dotenv.config(); // Load environment variables
+dotenv.config(); // Load .env variables
 
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
@@ -12,7 +12,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434"; // Ensure OLLAMA_HOST is set
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434"; // ✅ Fix missing OLLAMA_HOST
 
 app.set("view engine", "ejs");
 app.set("views", "views");
@@ -22,7 +22,7 @@ app.get("/", (req, res) => {
     res.render("index");
 });
 
-// 🔹 FIX: Ensure Correct API Request
+// ✅ FIXED: Correct API request and removed getReader()
 app.get("/stream", async (req, res) => {
     const { prompt } = req.query;
     console.log(`🔹 Received request: "${prompt}"`);
@@ -44,7 +44,7 @@ app.get("/stream", async (req, res) => {
             throw new Error(`Ollama API Error: ${response.status} - ${errorText}`);
         }
 
-        // FIX: Use .json() instead of getReader()
+        // ✅ FIX: Use .json() instead of getReader()
         const responseData = await response.json();
         if (!responseData.response) {
             throw new Error("No valid response from AI model.");
