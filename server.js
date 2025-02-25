@@ -1,8 +1,9 @@
+// server.js
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const dotenv = require("dotenv");
-dotenv.config(); // Load .env variables
+dotenv.config();
 
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
@@ -12,7 +13,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434"; // ✅ Fix missing OLLAMA_HOST
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
 
 app.set("view engine", "ejs");
 app.set("views", "views");
@@ -22,7 +23,6 @@ app.get("/", (req, res) => {
     res.render("index");
 });
 
-// ✅ FIXED: Correct API request and removed getReader()
 app.get("/stream", async (req, res) => {
     const { prompt } = req.query;
     console.log(`🔹 Received request: "${prompt}"`);
@@ -36,28 +36,30 @@ app.get("/stream", async (req, res) => {
         const response = await fetch(`${OLLAMA_HOST}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "llama2", prompt }),
+            body: JSON.stringify({ model: "llama2", prompt }), // Or your model name
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Ollama API Error: ${response.status} - ${errorText}`);
+            console.error(`Ollama API Error: ${response.status} - ${errorText}`);
+            return res.status(response.status).json({ error: errorText }); // Send JSON error
         }
 
-        // ✅ FIX: Use .json() instead of getReader()
         const responseData = await response.json();
-        if (!responseData.response) {
+        console.log("🔹 AI Response:", responseData); // Log the full response
+
+        if (!responseData.response) { // Check if 'response' field exists
             throw new Error("No valid response from AI model.");
         }
 
-        console.log("🔹 AI Response:", responseData.response);
         res.json({ text: responseData.response });
 
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
-        res.status(500).json({ error: error.message || "An error occurred" });
+        res.status(500).json({ error: error.message || "An error occurred" }); // Send JSON error
     }
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 AI Server running on port ${port}`));
+
