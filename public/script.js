@@ -4,13 +4,31 @@ document.addEventListener("DOMContentLoaded", function () {
     const sendButton = document.getElementById("send-button");
     let eventSource = null;
 
-    function displayMessage(text, className) {
+    function displayMessage(text, className, appendCopy = false) {
         const messageElement = document.createElement("div");
         messageElement.classList.add("message", className);
-        messageElement.innerText = text;
+        messageElement.innerHTML = text;
+
+        if (appendCopy) {
+            const copyButton = document.createElement("button");
+            copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+            copyButton.classList.add("copy-button");
+            copyButton.onclick = () => copyToClipboard(text, copyButton);
+            messageElement.appendChild(copyButton);
+        }
+
         chatBox.appendChild(messageElement);
         chatBox.scrollTop = chatBox.scrollHeight;
         return messageElement;
+    }
+
+    function copyToClipboard(text, button) {
+        navigator.clipboard.writeText(text).then(() => {
+            button.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => {
+                button.innerHTML = '<i class="fas fa-copy"></i>';
+            }, 1500);
+        }).catch(err => console.error("Failed to copy text:", err));
     }
 
     async function sendMessage() {
@@ -31,6 +49,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (event.data === "[DONE]") {
                     eventSource.close();
                     eventSource = null;
+
+                    botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
+                    displayMessage(fullResponse, "bot-message", true); // Add Copy Button
+
                 } else {
                     try {
                         const responseData = JSON.parse(event.data);
