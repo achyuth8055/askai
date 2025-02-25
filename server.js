@@ -19,7 +19,6 @@ app.get("/", (req, res) => {
     res.render("index");
 });
 
-// ✅ FIX: Stream AI Response Properly
 app.get("/stream", async (req, res) => {
     const { prompt } = req.query;
     console.log(`🔹 Received request: "${prompt}"`);
@@ -35,22 +34,33 @@ app.get("/stream", async (req, res) => {
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        const response = await fetch(`http://34.123.54.44:11434/api/generate`, {
+        const response = await fetch(`http://${process.env.OLLAMA_IP}:11434/api/generate`, { // Use environment variable!
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: "llama2", prompt }),
         });
+
+        if (!response.ok) {
+            const errorText = await response.text(); // Get error text
+            throw new Error(`Ollama API Error: ${response.status} - ${errorText}`); // Throw error with details
+        }
+
 
         if (!response.body) {
             throw new Error("No response body from AI model.");
         }
 
         const decoder = new TextDecoder();
-        const reader = response.body;
+        const reader = response.body.getReader(); // Get the reader
 
-        for await (const chunk of reader) {
+        while (true) {
+            const { done, value } = await reader.read(); // Read a chunk
+            if (done) break; // Exit loop if done
+
             try {
-                const parsedJson = JSON.parse(decoder.decode(chunk, { stream: true }));
+                const chunk = decoder.decode(value, { stream: true }); // Decode the chunk
+                const parsedJson = JSON.parse(chunk); // Parse JSON
+
                 if (parsedJson.response) {
                     let formattedText = parsedJson.response
                         .replace(/</g, "&lt;")
@@ -60,18 +70,21 @@ app.get("/stream", async (req, res) => {
                     console.log("🔹 Streaming response:", formattedText);
                     res.write(`data: ${JSON.stringify({ text: formattedText })}\n\n`);
                 }
-            } catch (err) {
-                console.error("❌ JSON parse error:", err);
+            } catch (jsonError) {
+                console.error("❌ JSON parse error:", jsonError);
+                // Handle JSON parse errors gracefully, maybe send a special message to the client
+                res.write(`data: ${JSON.stringify({ text: "[Error processing response]" })}\n\n`);
             }
         }
-
         res.write("data: [DONE]\n\n");
         res.end();
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
-        res.write("data: [ERROR]\n\n");
-        res.end();
+        res.status(500).json({ error: error.message || "An error occurred" }); // JSON error response
     }
 });
-const port = process.env.PORT; 
-app.listen(port, () => console.log("🚀 AI Server running on port ",port));
+
+
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`🚀 AI Server running on port ${port}`));
