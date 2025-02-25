@@ -1,11 +1,13 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const { TextDecoder } = require("util");
 require("dotenv").config();
-const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+
+const fetch = (...args) =>
+    import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434"; // Use env variable
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -14,12 +16,10 @@ app.set("view engine", "ejs");
 app.set("views", "views");
 app.use(express.static("public"));
 
-// Home Route
 app.get("/", (req, res) => {
     res.render("index");
 });
 
-// AI Stream Route
 app.get("/stream", async (req, res) => {
     const { prompt } = req.query;
     console.log(`🔹 Received request: "${prompt}"`);
@@ -30,36 +30,56 @@ app.get("/stream", async (req, res) => {
 
     try {
         console.log("🔹 Fetching AI response...");
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
 
-        const response = await fetch(`${OLLAMA_HOST}/api/generate`, {
+        const response = await fetch(`${process.env.OLLAMA_HOST}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "llama2", prompt }),
+            body: JSON.stringify({ model: "llama2", prompt, stream: true }),
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Ollama API Error: ${response.status} - ${errorText}`);
+            throw new Error(`Ollama API Error: ${response.status}`);
         }
 
-        const data = await response.json(); // ✅ FIX: Read response as JSON
-        if (!data.response) {
-            throw new Error("No response from AI model.");
+        if (!response.body) {
+            throw new Error("No response body from AI model.");
         }
 
-        const formattedText = data.response
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/```([\s\S]*?)```/g, `<pre><code>$1</code></pre>`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
-        console.log("🔹 AI Response:", formattedText);
-        res.json({ text: formattedText }); // ✅ FIX: Send JSON response
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+
+            // Ensure valid JSON streaming
+            const lines = chunk.split("\n").filter(line => line.trim() !== "");
+            for (const line of lines) {
+                try {
+                    const parsedJson = JSON.parse(line);
+                    if (parsedJson.response) {
+                        console.log("🔹 Streaming response:", parsedJson.response);
+                        res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
+                    }
+                } catch (jsonError) {
+                    console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
+                }
+            }
+        }
+
+        res.write("data: [DONE]\n\n");
+        res.end();
+
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
         res.status(500).json({ error: error.message || "An error occurred" });
     }
 });
 
-// Start Server
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 AI Server running on port ${port}`));

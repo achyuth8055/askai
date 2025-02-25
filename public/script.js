@@ -36,8 +36,8 @@ document.addEventListener("DOMContentLoaded", function () {
         return messageElement;
     }
 
-    // Send Message & Enter Key Support
-    function sendMessage() {
+    // Send Message & Handle Streaming Response
+    async function sendMessage() {
         const message = userInput.value.trim();
         if (message === "") return;
 
@@ -48,57 +48,44 @@ document.addEventListener("DOMContentLoaded", function () {
         let botMessage = displayMessage("Thinking...", "bot-message");
         let fullResponse = "";
 
-        fetch(`/stream?prompt=${encodeURIComponent(message)}`)
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(err => {
-                        throw new Error(err.error || "Server error");
-                    });
-                }
-                return response;
-            })
-            .then(response => {
-                eventSource = new EventSource(`/stream?prompt=${encodeURIComponent(message)}`);
+        try {
+            const response = await fetch(`/stream?prompt=${encodeURIComponent(message)}`);
 
-                eventSource.onmessage = function (event) {
-                    if (event.data === "[DONE]") {
-                        eventSource.close();
-                        eventSource = null;
+            if (!response.ok) {
+                throw new Error(`Server Error: ${response.status}`);
+            }
 
-                        let copyButton = document.createElement("button");
-                        copyButton.innerHTML = '<i class="fas fa-copy"></i>';
-                        copyButton.classList.add("copy-button");
-                        copyButton.onclick = () => copyToClipboard(fullResponse, copyButton);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let partialData = "";
 
-                        botMessage.appendChild(copyButton);
-                    } else if (event.data === "[ERROR]") {
-                        botMessage.innerText = "Error fetching AI response.";
-                        eventSource.close();
-                        eventSource = null;
-                    } else {
-                        try {
-                            const responseData = JSON.parse(event.data);
-                            fullResponse += responseData.text;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+
+                // Split chunk into JSON objects
+                const lines = chunk.split("\n").filter(line => line.trim() !== "");
+                for (const line of lines) {
+                    try {
+                        const parsedJson = JSON.parse(line);
+                        if (parsedJson.text) {
+                            fullResponse += parsedJson.text;
                             botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
-                        } catch (error) {
-                            console.error("Error processing response:", error);
-                            botMessage.innerText = "Error processing response.";
                         }
+                    } catch (jsonError) {
+                        console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
                     }
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                };
+                }
+            }
 
-                eventSource.onerror = function (error) {
-                    console.error("EventSource error:", error);
-                    botMessage.innerText = "Error fetching AI response.";
-                    eventSource.close();
-                    eventSource = null;
-                };
-            })
-            .catch(error => {
-                console.error("Fetch error:", error);
-                botMessage.innerText = error.message;
-            });
+            botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
+
+        } catch (error) {
+            console.error("❌ Fetch Error:", error);
+            botMessage.innerText = "Error fetching AI response.";
+        }
     }
 
     // Event Listeners
