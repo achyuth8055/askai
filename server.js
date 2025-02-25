@@ -38,6 +38,11 @@ app.get("/stream", async (req, res) => {
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
+        // Send keep-alive pings every 15 seconds
+        const keepAliveInterval = setInterval(() => {
+            res.write("data: [PING]\n\n");
+        }, 15000);
+
         // Make API request to Ollama
         const response = await fetch(`${process.env.OLLAMA_HOST}/api/generate`, {
             method: "POST",
@@ -46,6 +51,7 @@ app.get("/stream", async (req, res) => {
         });
 
         if (!response.ok) {
+            clearInterval(keepAliveInterval);
             const errorText = await response.text();
             console.error("❌ Ollama API Error:", errorText);
             throw new Error(`Ollama API Error: ${response.status}`);
@@ -82,6 +88,7 @@ app.get("/stream", async (req, res) => {
             });
         }
 
+        clearInterval(keepAliveInterval);
         res.write("data: [DONE]\n\n");
         res.end();
 
