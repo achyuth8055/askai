@@ -39,21 +39,26 @@ app.get("/stream", async (req, res) => {
         });
 
         if (!response.ok) {
-            throw new Error(`Ollama API Error: ${response.status}`);
+            const errorText = await response.text();
+            console.error(`❌ Ollama API Error: ${response.status} - ${errorText}`);
+            return res.status(response.status).json({ error: errorText });
         }
 
         if (!response.body) {
             throw new Error("No response body from AI model.");
         }
 
-        const reader = response.body.pipe(new TextDecoderStream()).getReader();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const lines = value.trim().split("\n").filter(line => line.trim() !== "");
+            const chunk = decoder.decode(value, { stream: true });
 
+            // Ensure valid JSON streaming
+            const lines = chunk.split("\n").filter(line => line.trim() !== "");
             for (const line of lines) {
                 try {
                     const parsedJson = JSON.parse(line);
