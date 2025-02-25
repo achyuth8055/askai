@@ -2,8 +2,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const chatBox = document.getElementById("chat-box");
     const userInput = document.getElementById("user-input");
     const sendButton = document.getElementById("send-button");
+    let eventSource = null;
 
-    // Function to display messages in chat
     function displayMessage(text, className) {
         const messageElement = document.createElement("div");
         messageElement.classList.add("message", className);
@@ -13,7 +13,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return messageElement;
     }
 
-    // Send message & handle response
     async function sendMessage() {
         const message = userInput.value.trim();
         if (message === "") return;
@@ -23,42 +22,34 @@ document.addEventListener("DOMContentLoaded", function () {
         userInput.focus();
 
         let botMessage = displayMessage("Thinking...", "bot-message");
+        let fullResponse = "";
 
         try {
-            const response = await fetch(`/stream?prompt=${encodeURIComponent(message)}`);
+            eventSource = new EventSource(`/stream?prompt=${encodeURIComponent(message)}`);
 
-            if (!response.ok) {
-                throw new Error(`Server Error: ${response.status}`);
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let fullResponse = "";
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-
-                const lines = chunk.split("\n").filter(line => line.trim() !== "");
-                for (const line of lines) {
+            eventSource.onmessage = function (event) {
+                if (event.data === "[DONE]") {
+                    eventSource.close();
+                    eventSource = null;
+                } else {
                     try {
-                        if (line.startsWith("data:")) {
-                            const jsonText = line.replace("data:", "").trim();
-                            const parsedJson = JSON.parse(jsonText);
-                            if (parsedJson.text) {
-                                fullResponse += parsedJson.text;
-                                botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
-                            }
+                        const responseData = JSON.parse(event.data);
+                        if (responseData.text) {
+                            fullResponse += responseData.text;
+                            botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
                         }
-                    } catch (jsonError) {
-                        console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
+                    } catch (error) {
+                        console.error("❌ JSON Parse Error:", error, "Data:", event.data);
                     }
                 }
-            }
+            };
 
-            botMessage.innerHTML = fullResponse.replace(/\n/g, "<br>");
+            eventSource.onerror = function (error) {
+                console.error("❌ EventSource Error:", error);
+                botMessage.innerText = "Error fetching AI response.";
+                eventSource.close();
+                eventSource = null;
+            };
 
         } catch (error) {
             console.error("❌ Fetch Error:", error);
@@ -66,8 +57,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // Event Listeners
     sendButton.addEventListener("click", sendMessage);
+
     userInput.addEventListener("keypress", function (event) {
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();

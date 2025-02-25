@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const fetch = require("node-fetch"); // Ensure version is 2.x
+const fetch = require("node-fetch");
 require("dotenv").config();
 
 const app = express();
@@ -38,19 +38,42 @@ app.get("/stream", async (req, res) => {
         });
 
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error("❌ Ollama API Error:", errorText);
             throw new Error(`Ollama API Error: ${response.status}`);
         }
 
-        // ✅ Fix: Use `.json()` instead of `response.body.getReader()`
-        const responseData = await response.json();
-
-        if (responseData.response) {
-            console.log("🔹 Streaming response:", responseData.response);
-            res.write(`data: ${JSON.stringify({ text: responseData.response })}\n\n`);
+        if (!response.body) {
+            throw new Error("No response body from AI model.");
         }
 
-        res.write("data: [DONE]\n\n");
-        res.end();
+        const reader = response.body.pipe(new require("stream").PassThrough());
+        const decoder = new TextDecoder();
+
+        reader.on("data", (chunk) => {
+            try {
+                const dataString = decoder.decode(chunk, { stream: true }).trim();
+                const lines = dataString.split("\n").filter(line => line.trim() !== "");
+
+                lines.forEach(line => {
+                    if (line.startsWith("data:")) {
+                        line = line.replace("data:", "").trim();  // Remove `data:` prefix
+                    }
+                    const parsedJson = JSON.parse(line);
+                    if (parsedJson.response) {
+                        console.log("🔹 Streaming response:", parsedJson.response);
+                        res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
+                    }
+                });
+            } catch (jsonError) {
+                console.error("❌ JSON Parse Error:", jsonError);
+            }
+        });
+
+        reader.on("end", () => {
+            res.write("data: [DONE]\n\n");
+            res.end();
+        });
 
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
