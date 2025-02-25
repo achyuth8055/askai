@@ -2,31 +2,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const chatBox = document.getElementById("chat-box");
     const userInput = document.getElementById("user-input");
     const sendButton = document.getElementById("send-button");
-    const sidebarToggle = document.getElementById("sidebar-toggle");
-    const sidebar = document.getElementById("sidebar");
-    const closeSidebar = document.getElementById("close-sidebar");
-    let eventSource = null;
 
-    // Sidebar Toggle Functionality
-    sidebarToggle.addEventListener("click", () => {
-        sidebar.classList.toggle("show");
-    });
-
-    closeSidebar.addEventListener("click", () => {
-        sidebar.classList.remove("show");
-    });
-
-    // Function to Copy AI Response
-    function copyToClipboard(text, button) {
-        navigator.clipboard.writeText(text).then(() => {
-            button.innerHTML = '<i class="fas fa-check"></i>';
-            setTimeout(() => {
-                button.innerHTML = '<i class="fas fa-copy"></i>';
-            }, 1500);
-        }).catch(err => console.error("Failed to copy text:", err));
-    }
-
-    // Function to Display Messages
+    // Function to display messages in chat
     function displayMessage(text, className) {
         const messageElement = document.createElement("div");
         messageElement.classList.add("message", className);
@@ -36,7 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return messageElement;
     }
 
-    // Send Message & Handle Streaming Response
+    // Send message & handle response
     async function sendMessage() {
         const message = userInput.value.trim();
         if (message === "") return;
@@ -46,7 +23,6 @@ document.addEventListener("DOMContentLoaded", function () {
         userInput.focus();
 
         let botMessage = displayMessage("Thinking...", "bot-message");
-        let fullResponse = "";
 
         try {
             const response = await fetch(`/stream?prompt=${encodeURIComponent(message)}`);
@@ -57,18 +33,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = "";
+            let fullResponse = "";
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                buffer += decoder.decode(value, { stream: true });
+                const chunk = decoder.decode(value, { stream: true });
 
-                // Split chunk into JSON objects
-                const lines = buffer.split("\n").filter(line => line.trim() !== "");
-                buffer = ""; // Reset buffer after processing
-
+                const lines = chunk.split("\n").filter(line => line.trim() !== "");
                 for (const line of lines) {
                     try {
                         if (line.startsWith("data:")) {
@@ -95,7 +68,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Event Listeners
     sendButton.addEventListener("click", sendMessage);
-
     userInput.addEventListener("keypress", function (event) {
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();

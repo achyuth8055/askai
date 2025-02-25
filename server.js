@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const fetch = require("node-fetch");
+const fetch = require("node-fetch"); // Ensure version is 2.x
 require("dotenv").config();
 
 const app = express();
@@ -41,39 +41,12 @@ app.get("/stream", async (req, res) => {
             throw new Error(`Ollama API Error: ${response.status}`);
         }
 
-        if (!response.body) {
-            throw new Error("No response body from AI model.");
-        }
+        // ✅ Fix: Use `.json()` instead of `response.body.getReader()`
+        const responseData = await response.json();
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        let buffer = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // Ensure valid JSON streaming
-            const lines = buffer.split("\n").filter(line => line.trim() !== "");
-            buffer = ""; // Reset buffer after processing
-
-            for (const line of lines) {
-                try {
-                    if (line.startsWith("data:")) {
-                        const jsonText = line.replace("data:", "").trim();
-                        const parsedJson = JSON.parse(jsonText);
-                        if (parsedJson.response) {
-                            console.log("🔹 Streaming response:", parsedJson.response);
-                            res.write(`data: ${JSON.stringify({ text: parsedJson.response })}\n\n`);
-                        }
-                    }
-                } catch (jsonError) {
-                    console.error("❌ JSON Parse Error:", jsonError, "Data received:", line);
-                }
-            }
+        if (responseData.response) {
+            console.log("🔹 Streaming response:", responseData.response);
+            res.write(`data: ${JSON.stringify({ text: responseData.response })}\n\n`);
         }
 
         res.write("data: [DONE]\n\n");
