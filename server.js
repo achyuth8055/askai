@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -8,12 +7,11 @@ dotenv.config();
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const app = express();
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434"; // ✅ Ensure correct Ollama host
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
-
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
 
 app.set("view engine", "ejs");
 app.set("views", "views");
@@ -32,34 +30,33 @@ app.get("/stream", async (req, res) => {
     }
 
     try {
-        console.log("🔹 Fetching AI response...");
+        console.log(`🔹 Connecting to Ollama at: ${OLLAMA_HOST}`);
+
         const response = await fetch(`${OLLAMA_HOST}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "llama2", prompt }), // Or your model name
+            body: JSON.stringify({ model: "llama2", prompt }),
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`Ollama API Error: ${response.status} - ${errorText}`);
-            return res.status(response.status).json({ error: errorText }); // Send JSON error
+            console.error(`❌ Ollama API Error: ${response.status} - ${errorText}`);
+            return res.status(response.status).json({ error: errorText });
         }
 
         const responseData = await response.json();
-        console.log("🔹 AI Response:", responseData); // Log the full response
-
-        if (!responseData.response) { // Check if 'response' field exists
+        if (!responseData.response) {
             throw new Error("No valid response from AI model.");
         }
 
+        console.log("🔹 AI Response:", responseData.response);
         res.json({ text: responseData.response });
 
     } catch (error) {
         console.error("❌ Error fetching AI response:", error);
-        res.status(500).json({ error: error.message || "An error occurred" }); // Send JSON error
+        res.status(503).json({ error: "Service Unavailable. Check Ollama API connection." });
     }
 });
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 AI Server running on port ${port}`));
-
